@@ -1,6 +1,6 @@
 import React, { ReactNode } from "react";
 
-interface ButtonProps {
+export interface ButtonProps {
   children: ReactNode; // Button text or content
   size?: "sm" | "md"; // Button size
   variant?: "primary" | "outline"; // Button variant
@@ -8,7 +8,8 @@ interface ButtonProps {
   endIcon?: ReactNode; // Icon after the text
   onClick?: () => void; // Click handler
   disabled?: boolean; // Disabled state
-  className?: string; // Disabled state
+  type?: "button" | "submit" | "reset"; // Button type
+  className?: string; // Additional classes
 }
 
 const Button: React.FC<ButtonProps> = ({
@@ -20,6 +21,7 @@ const Button: React.FC<ButtonProps> = ({
   onClick,
   className = "",
   disabled = false,
+  type = "button",
 }) => {
   // Size Classes
   const sizeClasses = {
@@ -37,6 +39,7 @@ const Button: React.FC<ButtonProps> = ({
 
   return (
     <button
+      type={type}
       className={`inline-flex items-center justify-center font-medium gap-2 rounded-lg transition ${className} ${
         sizeClasses[size]
       } ${variantClasses[variant]} ${
