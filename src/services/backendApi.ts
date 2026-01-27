@@ -27,8 +27,8 @@ function getBackendUrl(): string {
  * Generic backend API request function
  */
 export async function backendFetch<T>(
-  endpoint: string,
-  options: RequestInit = {}
+    endpoint: string,
+    options: RequestInit = {}
 ): Promise<T> {
   const url = `${getBackendUrl()}${endpoint}`;
 
@@ -53,9 +53,9 @@ export async function backendFetch<T>(
 
     if (!response.ok) {
       const errorMessage =
-        (typeof data === 'object' && data?.error) ||
-        (typeof data === 'object' && data?.message) ||
-        `Backend request failed with status ${response.status}`;
+          (typeof data === 'object' && data?.error) ||
+          (typeof data === 'object' && data?.message) ||
+          `Backend request failed with status ${response.status}`;
 
       throw new Error(errorMessage);
     }
@@ -155,3 +155,45 @@ export async function backendUpdateOrderStatus(id: string, data: any, sessionCoo
   });
 }
 
+// =============================================================================
+// CSV Upload API
+// =============================================================================
+
+/**
+ * Upload a CSV file to the backend
+ * Note: This uses a different approach than backendFetch because we need to send FormData
+ */
+export async function backendUploadCsv(file: File, sessionCookie?: string) {
+  const url = process.env.API_URL;
+  if (!url) {
+    throw new Error('API_URL environment variable is not set');
+  }
+
+  const formData = new FormData();
+  formData.append('file', file);
+
+  const response = await fetch(`${url}/api/upload-csv`, {
+    method: 'POST',
+    headers: sessionCookie ? { Cookie: sessionCookie } : {},
+    body: formData,
+  });
+
+  let data: any;
+  const contentType = response.headers.get('content-type');
+  if (contentType && contentType.includes('application/json')) {
+    data = await response.json();
+  } else {
+    data = await response.text();
+  }
+
+  if (!response.ok) {
+    const errorMessage =
+        (typeof data === 'object' && data?.error) ||
+        (typeof data === 'object' && data?.message) ||
+        `CSV upload failed with status ${response.status}`;
+
+    throw new Error(errorMessage);
+  }
+
+  return data;
+}
