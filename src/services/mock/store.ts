@@ -69,6 +69,12 @@ function nextId(records: { id: string }[]): string {
   return String(max + 1);
 }
 
+/** Normalize an optional Hebrew name: trim, treating blank as "no translation". */
+function cleanHe(nameHe?: string): string | undefined {
+  const trimmed = nameHe?.trim();
+  return trimmed ? trimmed : undefined;
+}
+
 class MockStore {
   private db: MockDb = createSeed();
 
@@ -130,20 +136,21 @@ class MockStore {
     return delay(s ? { ...s } : null);
   }
 
-  createSchool(name: string): Promise<School> {
+  createSchool(name: string, nameHe?: string): Promise<School> {
     const trimmed = name.trim();
     if (!trimmed) throw new ValidationError('School name is required');
-    const school = { id: nextId(this.db.schools), name: trimmed };
+    const school = { id: nextId(this.db.schools), name: trimmed, nameHe: cleanHe(nameHe) };
     this.db.schools.push(school);
     return delay({ ...school });
   }
 
-  updateSchool(id: string, name: string): Promise<School> {
+  updateSchool(id: string, name: string, nameHe?: string): Promise<School> {
     const school = this.db.schools.find((x) => x.id === id);
     if (!school) throw new NotFoundError(`School ${id} not found`);
     const trimmed = name.trim();
     if (!trimmed) throw new ValidationError('School name is required');
     school.name = trimmed;
+    if (nameHe !== undefined) school.nameHe = cleanHe(nameHe);
     return delay({ ...school });
   }
 
@@ -178,23 +185,24 @@ class MockStore {
     return delay(g ? { ...g } : null);
   }
 
-  createGrade(schoolId: string, name: string): Promise<Grade> {
+  createGrade(schoolId: string, name: string, nameHe?: string): Promise<Grade> {
     if (!this.db.schools.some((s) => s.id === schoolId)) {
       throw new NotFoundError(`School ${schoolId} not found`);
     }
     const trimmed = name.trim();
     if (!trimmed) throw new ValidationError('Grade name is required');
-    const grade = { id: nextId(this.db.grades), schoolId, name: trimmed };
+    const grade = { id: nextId(this.db.grades), schoolId, name: trimmed, nameHe: cleanHe(nameHe) };
     this.db.grades.push(grade);
     return delay({ ...grade });
   }
 
-  updateGrade(id: string, name: string): Promise<Grade> {
+  updateGrade(id: string, name: string, nameHe?: string): Promise<Grade> {
     const grade = this.db.grades.find((x) => x.id === id);
     if (!grade) throw new NotFoundError(`Grade ${id} not found`);
     const trimmed = name.trim();
     if (!trimmed) throw new ValidationError('Grade name is required');
     grade.name = trimmed;
+    if (nameHe !== undefined) grade.nameHe = cleanHe(nameHe);
     return delay({ ...grade });
   }
 
@@ -221,18 +229,18 @@ class MockStore {
     return delay(e ? { ...e } : null);
   }
 
-  createEquipment(name: string, price: number): Promise<Equipment> {
+  createEquipment(name: string, price: number, nameHe?: string): Promise<Equipment> {
     const trimmed = name.trim();
     if (!trimmed) throw new ValidationError('Equipment name is required');
     if (!(price >= 0)) throw new ValidationError('Price must be zero or greater');
-    const item = { id: nextId(this.db.equipment), name: trimmed, price };
+    const item = { id: nextId(this.db.equipment), name: trimmed, nameHe: cleanHe(nameHe), price };
     this.db.equipment.push(item);
     return delay({ ...item });
   }
 
   updateEquipment(
     id: string,
-    updates: { name?: string; price?: number },
+    updates: { name?: string; price?: number; nameHe?: string },
   ): Promise<Equipment> {
     const item = this.db.equipment.find((x) => x.id === id);
     if (!item) throw new NotFoundError(`Equipment ${id} not found`);
@@ -241,6 +249,7 @@ class MockStore {
       if (!trimmed) throw new ValidationError('Equipment name is required');
       item.name = trimmed;
     }
+    if (updates.nameHe !== undefined) item.nameHe = cleanHe(updates.nameHe);
     if (updates.price !== undefined) {
       if (!(updates.price >= 0)) {
         throw new ValidationError('Price must be zero or greater');

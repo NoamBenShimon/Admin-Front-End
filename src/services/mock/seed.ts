@@ -9,18 +9,22 @@
  */
 
 // Internal record shapes — these mirror the database tables, not the API DTOs.
+// `nameHe` mirrors the backend's `*_he` columns (optional Hebrew translation).
 export interface SchoolRecord {
   id: string;
   name: string;
+  nameHe?: string;
 }
 export interface GradeRecord {
   id: string;
   schoolId: string;
   name: string;
+  nameHe?: string;
 }
 export interface EquipmentRecord {
   id: string;
   name: string;
+  nameHe?: string;
   price: number;
 }
 export interface RequirementRecord {
@@ -95,11 +99,26 @@ const SCHOOL_NAMES: Record<string, string> = {
   '5': 'Begin',
 };
 
+const SCHOOL_NAMES_HE: Record<string, string> = {
+  '1': 'בן גוריון',
+  '2': 'אורט',
+  '3': 'ברנר',
+  '4': 'הרצל',
+  '5': 'בגין',
+};
+
 const GRADE_LABELS: Record<number, string> = {
   9: '9th Grade',
   10: '10th Grade',
   11: '11th Grade',
   12: '12th Grade',
+};
+
+const GRADE_LABELS_HE: Record<number, string> = {
+  9: "כיתה ט'",
+  10: "כיתה י'",
+  11: 'כיתה י"א',
+  12: 'כיתה י"ב',
 };
 
 /** Admin accounts allowed to sign in to this panel (matches backend seed). */
@@ -109,7 +128,7 @@ export const MOCK_ADMINS: AdminRecord[] = [
 
 export function createSeed(): MockDb {
   const schools: SchoolRecord[] = Object.entries(SCHOOL_NAMES).map(
-    ([id, name]) => ({ id, name }),
+    ([id, name]) => ({ id, name, nameHe: SCHOOL_NAMES_HE[id] }),
   );
 
   const grades: GradeRecord[] = [];
@@ -119,19 +138,20 @@ export function createSeed(): MockDb {
         id: gradeId(school.id, n),
         schoolId: school.id,
         name: GRADE_LABELS[n],
+        nameHe: GRADE_LABELS_HE[n],
       });
     }
   }
 
   const equipment: EquipmentRecord[] = [
-    { id: '1', name: 'Notebook', price: 5.0 },
-    { id: '2', name: 'Pencil', price: 2.0 },
-    { id: '3', name: 'Algebra Textbook', price: 35.5 },
-    { id: '4', name: 'Physics Textbook', price: 35.0 },
-    { id: '5', name: 'Laptop', price: 800.0 },
-    { id: '6', name: 'Engineering Calculator', price: 60.0 },
-    { id: '7', name: 'Binder', price: 4.0 },
-    { id: '8', name: 'Highlighter', price: 2.0 },
+    { id: '1', name: 'Notebook', nameHe: 'מחברת', price: 5.0 },
+    { id: '2', name: 'Pencil', nameHe: 'עיפרון', price: 2.0 },
+    { id: '3', name: 'Algebra Textbook', nameHe: 'ספר אלגברה', price: 35.5 },
+    { id: '4', name: 'Physics Textbook', nameHe: 'ספר פיזיקה', price: 35.0 },
+    { id: '5', name: 'Laptop', nameHe: 'מחשב נייד', price: 800.0 },
+    { id: '6', name: 'Engineering Calculator', nameHe: 'מחשבון הנדסי', price: 60.0 },
+    { id: '7', name: 'Binder', nameHe: 'קלסר', price: 4.0 },
+    { id: '8', name: 'Highlighter', nameHe: 'מרקר', price: 2.0 },
   ];
 
   // Default list for every grade: binders + highlighters.

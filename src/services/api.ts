@@ -186,14 +186,14 @@ export async function getSchoolById(id: string): Promise<School | null> {
 export async function createSchool(payload: SchoolPayload): Promise<School> {
   return withFallback(
     () => apiFetch<School>('/schools', { method: 'POST', body: JSON.stringify(payload) }),
-    () => mockStore.createSchool(payload.name),
+    () => mockStore.createSchool(payload.name, payload.nameHe),
   );
 }
 
 export async function updateSchool(id: string, payload: SchoolPayload): Promise<School> {
   return withFallback(
     () => apiFetch<School>(`/schools/${id}`, { method: 'PUT', body: JSON.stringify(payload) }),
-    () => mockStore.updateSchool(id, payload.name),
+    () => mockStore.updateSchool(id, payload.name, payload.nameHe),
   );
 }
 
@@ -222,14 +222,15 @@ export async function getGradeById(id: string): Promise<Grade | null> {
 export async function createGrade(payload: GradePayload): Promise<Grade> {
   return withFallback(
     () => apiFetch<Grade>('/grades', { method: 'POST', body: JSON.stringify(payload) }),
-    () => mockStore.createGrade(payload.schoolId, payload.name),
+    () => mockStore.createGrade(payload.schoolId, payload.name, payload.nameHe),
   );
 }
 
-export async function updateGrade(id: string, name: string): Promise<Grade> {
+export async function updateGrade(id: string, name: string, nameHe?: string): Promise<Grade> {
+  const body = nameHe === undefined ? { name } : { name, nameHe };
   return withFallback(
-    () => apiFetch<Grade>(`/grades/${id}`, { method: 'PUT', body: JSON.stringify({ name }) }),
-    () => mockStore.updateGrade(id, name),
+    () => apiFetch<Grade>(`/grades/${id}`, { method: 'PUT', body: JSON.stringify(body) }),
+    () => mockStore.updateGrade(id, name, nameHe),
   );
 }
 
@@ -255,7 +256,7 @@ export async function getEquipmentById(id: string): Promise<Equipment | null> {
 export async function createEquipment(payload: EquipmentPayload): Promise<Equipment> {
   return withFallback(
     () => apiFetch<Equipment>('/equipment', { method: 'POST', body: JSON.stringify(payload) }),
-    () => mockStore.createEquipment(payload.name, payload.price),
+    () => mockStore.createEquipment(payload.name, payload.price, payload.nameHe),
   );
 }
 

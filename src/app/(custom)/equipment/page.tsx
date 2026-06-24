@@ -26,6 +26,7 @@ export default function EquipmentCatalogPage() {
   const [isFormOpen, setIsFormOpen] = useState(false);
   const [editing, setEditing] = useState<Equipment | null>(null);
   const [nameInput, setNameInput] = useState("");
+  const [nameHeInput, setNameHeInput] = useState("");
   const [priceInput, setPriceInput] = useState("");
   const [formError, setFormError] = useState<string | null>(null);
   const [isSaving, setIsSaving] = useState(false);
@@ -53,6 +54,7 @@ export default function EquipmentCatalogPage() {
   const openCreate = () => {
     setEditing(null);
     setNameInput("");
+    setNameHeInput("");
     setPriceInput("");
     setFormError(null);
     setIsFormOpen(true);
@@ -61,6 +63,7 @@ export default function EquipmentCatalogPage() {
   const openEdit = (item: Equipment) => {
     setEditing(item);
     setNameInput(item.name);
+    setNameHeInput(item.nameHe ?? "");
     setPriceInput(String(item.price));
     setFormError(null);
     setIsFormOpen(true);
@@ -68,6 +71,7 @@ export default function EquipmentCatalogPage() {
 
   const handleSave = async () => {
     const name = nameInput.trim();
+    const nameHe = nameHeInput.trim();
     const price = Number(priceInput);
     if (!name) {
       setFormError("Item name is required.");
@@ -81,9 +85,9 @@ export default function EquipmentCatalogPage() {
       setIsSaving(true);
       setFormError(null);
       if (editing) {
-        await api.updateEquipment(editing.id, { name, price });
+        await api.updateEquipment(editing.id, { name, nameHe, price });
       } else {
-        await api.createEquipment({ name, price });
+        await api.createEquipment({ name, nameHe, price });
       }
       setIsFormOpen(false);
       await load();
@@ -157,6 +161,9 @@ export default function EquipmentCatalogPage() {
                     <TableCell isHeader className="px-5 py-3 text-start text-sm font-medium text-gray-500 dark:text-gray-400">
                       Item
                     </TableCell>
+                    <TableCell isHeader className="px-5 py-3 text-start text-sm font-medium text-gray-500 dark:text-gray-400">
+                      Hebrew Name
+                    </TableCell>
                     <TableCell isHeader className="px-5 py-3 text-end text-sm font-medium text-gray-500 dark:text-gray-400">
                       Price
                     </TableCell>
@@ -170,6 +177,13 @@ export default function EquipmentCatalogPage() {
                     <TableRow key={item.id} className="transition-colors hover:bg-gray-50 dark:hover:bg-white/[0.02]">
                       <TableCell className="px-5 py-4 text-start font-medium text-gray-800 dark:text-white/90">
                         {item.name}
+                      </TableCell>
+                      <TableCell className="px-5 py-4 text-start font-medium text-gray-800 dark:text-white/90">
+                        {item.nameHe ? (
+                          <span dir="rtl">{item.nameHe}</span>
+                        ) : (
+                          <span className="text-sm text-gray-400 dark:text-gray-500">—</span>
+                        )}
                       </TableCell>
                       <TableCell className="px-5 py-4 text-end text-sm text-gray-600 dark:text-gray-300">
                         {formatCurrency(item.price)}
@@ -225,6 +239,18 @@ export default function EquipmentCatalogPage() {
                 onChange={(e) => setNameInput(e.target.value)}
                 placeholder="e.g. Notebook"
               />
+            </div>
+            <div>
+              <Label>Hebrew name (עברית)</Label>
+              <Input
+                value={nameHeInput}
+                onChange={(e) => setNameHeInput(e.target.value)}
+                placeholder="לדוגמה: מחברת"
+                dir="rtl"
+              />
+              <p className="mt-1.5 text-xs text-gray-500 dark:text-gray-400">
+                Optional. Shown to parents browsing in Hebrew; falls back to the item name if blank.
+              </p>
             </div>
             <div>
               <Label>Price (₪)</Label>

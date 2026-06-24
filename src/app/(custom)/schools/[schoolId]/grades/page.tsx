@@ -31,6 +31,7 @@ export default function GradesPage() {
   const [isFormOpen, setIsFormOpen] = useState(false);
   const [editing, setEditing] = useState<Grade | null>(null);
   const [nameInput, setNameInput] = useState("");
+  const [nameHeInput, setNameHeInput] = useState("");
   const [formError, setFormError] = useState<string | null>(null);
   const [isSaving, setIsSaving] = useState(false);
 
@@ -62,6 +63,7 @@ export default function GradesPage() {
   const openCreate = () => {
     setEditing(null);
     setNameInput("");
+    setNameHeInput("");
     setFormError(null);
     setIsFormOpen(true);
   };
@@ -69,12 +71,14 @@ export default function GradesPage() {
   const openEdit = (grade: Grade) => {
     setEditing(grade);
     setNameInput(grade.name);
+    setNameHeInput(grade.nameHe ?? "");
     setFormError(null);
     setIsFormOpen(true);
   };
 
   const handleSave = async () => {
     const name = nameInput.trim();
+    const nameHe = nameHeInput.trim();
     if (!name) {
       setFormError("Grade name is required.");
       return;
@@ -83,9 +87,9 @@ export default function GradesPage() {
       setIsSaving(true);
       setFormError(null);
       if (editing) {
-        await api.updateGrade(editing.id, name);
+        await api.updateGrade(editing.id, name, nameHe);
       } else {
-        await api.createGrade({ schoolId, name });
+        await api.createGrade({ schoolId, name, nameHe });
       }
       setIsFormOpen(false);
       await loadGrades();
@@ -162,6 +166,9 @@ export default function GradesPage() {
                     <TableCell isHeader className="px-5 py-3 text-start text-sm font-medium text-gray-500 dark:text-gray-400">
                       Grade
                     </TableCell>
+                    <TableCell isHeader className="px-5 py-3 text-start text-sm font-medium text-gray-500 dark:text-gray-400">
+                      Hebrew Name
+                    </TableCell>
                     <TableCell isHeader className="px-5 py-3 text-end text-sm font-medium text-gray-500 dark:text-gray-400">
                       Actions
                     </TableCell>
@@ -180,6 +187,13 @@ export default function GradesPage() {
                           </div>
                           <span className="font-medium text-gray-800 dark:text-white/90">{grade.name}</span>
                         </div>
+                      </TableCell>
+                      <TableCell className="px-5 py-4 text-start">
+                        {grade.nameHe ? (
+                          <span dir="rtl" className="font-medium text-gray-800 dark:text-white/90">{grade.nameHe}</span>
+                        ) : (
+                          <span className="text-sm text-gray-400 dark:text-gray-500">—</span>
+                        )}
                       </TableCell>
                       <TableCell className="px-5 py-4 text-end">
                         <div className="flex items-center justify-end gap-2">
@@ -230,15 +244,29 @@ export default function GradesPage() {
               {editing ? "Update the grade name." : `Add a grade to ${school?.name ?? "this school"}.`}
             </p>
           </div>
-          <div>
-            <Label>Grade name</Label>
-            <Input
-              value={nameInput}
-              onChange={(e) => setNameInput(e.target.value)}
-              placeholder="e.g. 9th Grade"
-              error={Boolean(formError)}
-              hint={formError ?? undefined}
-            />
+          <div className="space-y-4">
+            <div>
+              <Label>Grade name</Label>
+              <Input
+                value={nameInput}
+                onChange={(e) => setNameInput(e.target.value)}
+                placeholder="e.g. 9th Grade"
+                error={Boolean(formError)}
+                hint={formError ?? undefined}
+              />
+            </div>
+            <div>
+              <Label>Hebrew name (עברית)</Label>
+              <Input
+                value={nameHeInput}
+                onChange={(e) => setNameHeInput(e.target.value)}
+                placeholder={'לדוגמה: כיתה ט\''}
+                dir="rtl"
+              />
+              <p className="mt-1.5 text-xs text-gray-500 dark:text-gray-400">
+                Optional. Shown to parents browsing in Hebrew; falls back to the grade name if blank.
+              </p>
+            </div>
           </div>
           <div className="flex items-center justify-end gap-3">
             <Button variant="outline" size="sm" onClick={() => setIsFormOpen(false)} disabled={isSaving}>

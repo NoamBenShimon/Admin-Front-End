@@ -47,26 +47,33 @@ export interface User {
 // Domain entities
 // =============================================================================
 
-/** A school — `school(sid, sname)` */
+/**
+ * A school — `school(sid, sname, sname_he)`.
+ * `name` is the default (English) name; `nameHe` is the optional Hebrew
+ * translation (empty/absent when not yet translated).
+ */
 export interface School {
   id: string;
   name: string;
+  nameHe?: string;
 }
 
-/** A grade within a school — `grade(gid, sid, gname)` */
+/** A grade within a school — `grade(gid, sid, gname, gname_he)` */
 export interface Grade {
   id: string;
   schoolId: string;
   name: string;
+  nameHe?: string;
 }
 
 /**
- * A catalog equipment item — `equipment(eid, ename, price)`.
- * `price` is in ILS (₪).
+ * A catalog equipment item — `equipment(eid, ename, ename_he, price)`.
+ * `price` is in ILS (₪). `nameHe` is the optional Hebrew translation.
  */
 export interface Equipment {
   id: string;
   name: string;
+  nameHe?: string;
   price: number;
 }
 
@@ -214,16 +221,22 @@ export interface ImportResult {
 
 export interface SchoolPayload {
   name: string;
+  /** Optional Hebrew translation of the name. */
+  nameHe?: string;
 }
 
 export interface GradePayload {
   schoolId: string;
   name: string;
+  /** Optional Hebrew translation of the name. */
+  nameHe?: string;
 }
 
 export interface EquipmentPayload {
   name: string;
   price: number;
+  /** Optional Hebrew translation of the name. */
+  nameHe?: string;
 }
 
 /** Replace-all body for a grade's requirement list */
