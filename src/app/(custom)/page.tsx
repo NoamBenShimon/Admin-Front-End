@@ -1,179 +1,162 @@
 "use client";
 
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
+import dynamic from "next/dynamic";
+import type { ApexOptions } from "apexcharts";
 import { useAuth } from "@/context/AuthContext";
 import Breadcrumb from "@/components/common/Breadcrumb";
-import Link from "next/link";
 import * as api from "@/services/api";
-import type { School } from "@/types/api";
+import type { AnalyticsSummary } from "@/types/api";
+import { formatCurrency } from "@/lib/format";
 
-export default function HomePage() {
+const ReactApexChart = dynamic(() => import("react-apexcharts"), { ssr: false });
+
+function monthLabel(yyyymm: string): string {
+  const date = new Date(`${yyyymm}-01T00:00:00`);
+  return Number.isNaN(date.getTime())
+    ? yyyymm
+    : date.toLocaleString("en", { month: "short", year: "2-digit" });
+}
+
+export default function DashboardPage() {
   const { user } = useAuth();
-  const [schools, setSchools] = useState<School[]>([]);
+  const [summary, setSummary] = useState<AnalyticsSummary | null>(null);
   const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    async function loadData() {
-      try {
-        const schoolsData = await api.getSchools();
-        setSchools(schoolsData);
-      } catch (error) {
-        console.error("Failed to load dashboard data:", error);
-      } finally {
-        setIsLoading(false);
-      }
-    }
-    loadData();
+    api
+      .getAnalyticsSummary()
+      .then(setSummary)
+      .catch((err) => {
+        console.error("Failed to load analytics:", err);
+        setError("Could not load dashboard analytics.");
+      })
+      .finally(() => setIsLoading(false));
   }, []);
+
+  const revenueChart = useMemo<{ options: ApexOptions; series: ApexAxisChartSeries }>(() => {
+    const months = summary?.revenueByMonth ?? [];
+    return {
+      options: {
+        colors: ["#465fff"],
+        chart: { fontFamily: "Outfit, sans-serif", type: "area", height: 280, toolbar: { show: false } },
+        stroke: { curve: "smooth", width: 2 },
+        fill: { type: "gradient", gradient: { opacityFrom: 0.4, opacityTo: 0 } },
+        dataLabels: { enabled: false },
+        xaxis: { categories: months.map((m) => monthLabel(m.month)), axisBorder: { show: false }, axisTicks: { show: false } },
+        yaxis: { labels: { formatter: (v) => formatCurrency(v) } },
+        tooltip: { y: { formatter: (v) => formatCurrency(v) } },
+        grid: { borderColor: "#e5e7eb", strokeDashArray: 4 },
+      },
+      series: [{ name: "Revenue", data: months.map((m) => Number(m.revenue.toFixed(2))) }],
+    };
+  }, [summary]);
+
+  const topEquipmentChart = useMemo<{ options: ApexOptions; series: ApexAxisChartSeries }>(() => {
+    const items = summary?.topEquipment ?? [];
+    return {
+      options: {
+        colors: ["#12b76a"],
+        chart: { fontFamily: "Outfit, sans-serif", type: "bar", height: 280, toolbar: { show: false } },
+        plotOptions: { bar: { horizontal: true, borderRadius: 4, columnWidth: "45%" } },
+        dataLabels: { enabled: false },
+        xaxis: { categories: items.map((i) => i.name) },
+        tooltip: { y: { formatter: (v) => formatCurrency(v) } },
+        grid: { borderColor: "#e5e7eb", strokeDashArray: 4 },
+      },
+      series: [{ name: "Revenue", data: items.map((i) => Number(i.revenue.toFixed(2))) }],
+    };
+  }, [summary]);
+
+  const schoolChart = useMemo<{ options: ApexOptions; series: number[] }>(() => {
+    const schools = summary?.spendBySchool ?? [];
+    return {
+      options: {
+        colors: ["#465fff", "#12b76a", "#f79009", "#f04438", "#7a5af8", "#06aed4"],
+        chart: { fontFamily: "Outfit, sans-serif", type: "donut" },
+        labels: schools.map((s) => s.schoolName),
+        legend: { position: "bottom" },
+        dataLabels: { enabled: false },
+        tooltip: { y: { formatter: (v) => formatCurrency(v) } },
+      },
+      series: schools.map((s) => Number(s.revenue.toFixed(2))),
+    };
+  }, [summary]);
 
   return (
     <>
       <Breadcrumb pageTitle="Dashboard" />
 
-      {/* Welcome Section */}
-      <div className="rounded-2xl border border-gray-200 bg-white p-6 dark:border-gray-800 dark:bg-white/[0.03] mb-6">
-        <h1 className="text-2xl font-semibold text-gray-800 dark:text-white/90 mb-2">
+      <div className="mb-6 rounded-2xl border border-gray-200 bg-white p-6 dark:border-gray-800 dark:bg-white/[0.03]">
+        <h1 className="mb-1 text-2xl font-semibold text-gray-800 dark:text-white/90">
           Welcome back, {user?.username || "Admin"}!
         </h1>
         <p className="text-gray-500 dark:text-gray-400">
-          Manage school equipment lists and inventories from this dashboard.
+          A snapshot of equipment ordering across Kiryat Motzkin.
         </p>
       </div>
 
-      {/* Quick Stats */}
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 mb-6">
-        {/* Schools Card */}
-        <div className="rounded-2xl border border-gray-200 bg-white p-6 dark:border-gray-800 dark:bg-white/[0.03]">
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="text-sm font-medium text-gray-500 dark:text-gray-400">
-                Total Schools
-              </p>
-              <h3 className="mt-1 text-3xl font-semibold text-gray-800 dark:text-white/90">
-                {isLoading ? "..." : schools.length}
-              </h3>
-            </div>
-            <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-brand-50 dark:bg-brand-500/10">
-              <svg
-                className="h-6 w-6 text-brand-500"
-                fill="none"
-                viewBox="0 0 24 24"
-                stroke="currentColor"
-              >
-                <path
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  strokeWidth={2}
-                  d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4"
-                />
-              </svg>
-            </div>
-          </div>
-          <Link
-            href="/schools"
-            className="mt-4 inline-flex items-center text-sm font-medium text-brand-500 hover:text-brand-600"
-          >
-            View all schools
-            <svg
-              className="ml-1 h-4 w-4"
-              fill="none"
-              viewBox="0 0 24 24"
-              stroke="currentColor"
-            >
-              <path
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                strokeWidth={2}
-                d="M9 5l7 7-7 7"
-              />
-            </svg>
-          </Link>
+      {error && (
+        <div className="mb-6 rounded-lg border border-error-200 bg-error-50 px-4 py-3 text-sm text-error-600 dark:border-error-500/30 dark:bg-error-500/10 dark:text-error-400">
+          {error}
         </div>
+      )}
 
-        {/* Classes Card */}
-        <div className="rounded-2xl border border-gray-200 bg-white p-6 dark:border-gray-800 dark:bg-white/[0.03]">
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="text-sm font-medium text-gray-500 dark:text-gray-400">
-                Quick Actions
-              </p>
-              <h3 className="mt-1 text-lg font-semibold text-gray-800 dark:text-white/90">
-                Manage Equipment
-              </h3>
-            </div>
-            <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-success-50 dark:bg-success-500/10">
-              <svg
-                className="h-6 w-6 text-success-500"
-                fill="none"
-                viewBox="0 0 24 24"
-                stroke="currentColor"
-              >
-                <path
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  strokeWidth={2}
-                  d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2"
-                />
-              </svg>
-            </div>
-          </div>
-          <p className="mt-2 text-sm text-gray-500 dark:text-gray-400">
-            Select a school to view and edit class equipment lists.
-          </p>
-        </div>
+      {/* Stat cards */}
+      <div className="mb-6 grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
+        <StatCard label="Total revenue" value={summary ? formatCurrency(summary.totalRevenue) : "…"} loading={isLoading} />
+        <StatCard label="Orders" value={summary ? String(summary.totalOrders) : "…"} loading={isLoading} />
+        <StatCard label="Active carts" value={summary ? String(summary.activeCarts) : "…"} loading={isLoading} />
+        <StatCard label="Catalog items" value={summary ? String(summary.catalogSize) : "…"} loading={isLoading} />
       </div>
 
-      {/* Recent Schools */}
-      <div className="rounded-2xl border border-gray-200 bg-white p-6 dark:border-gray-800 dark:bg-white/[0.03]">
-        <h3 className="text-lg font-semibold text-gray-800 dark:text-white/90 mb-4">
-          Schools Overview
-        </h3>
-        {isLoading ? (
-          <div className="flex items-center justify-center py-8">
-            <div className="inline-block w-6 h-6 border-2 border-gray-300 border-t-brand-500 rounded-full animate-spin"></div>
-            <span className="ml-2 text-gray-500">Loading...</span>
-          </div>
-        ) : schools.length === 0 ? (
-          <p className="text-gray-500 dark:text-gray-400 py-4">
-            No schools found. Contact an administrator to add schools.
-          </p>
+      {/* Revenue over time */}
+      <div className="mb-6 rounded-2xl border border-gray-200 bg-white p-6 dark:border-gray-800 dark:bg-white/[0.03]">
+        <h3 className="mb-4 text-lg font-semibold text-gray-800 dark:text-white/90">Revenue over time</h3>
+        {summary && summary.revenueByMonth.length > 0 ? (
+          <ReactApexChart options={revenueChart.options} series={revenueChart.series} type="area" height={280} />
         ) : (
-          <div className="grid gap-3">
-            {schools.slice(0, 5).map((school) => (
-              <Link
-                key={school.id}
-                href={`/schools/${school.id}/classes`}
-                className="flex items-center justify-between p-4 rounded-xl border border-gray-100 hover:border-brand-200 hover:bg-gray-50 dark:border-gray-800 dark:hover:border-brand-800 dark:hover:bg-white/[0.02] transition-colors"
-              >
-                <div>
-                  <h4 className="font-medium text-gray-800 dark:text-white/90">
-                    {school.name}
-                  </h4>
-                  {school.address && (
-                    <p className="text-sm text-gray-500 dark:text-gray-400">
-                      {school.address}
-                    </p>
-                  )}
-                </div>
-                <svg
-                  className="h-5 w-5 text-gray-400"
-                  fill="none"
-                  viewBox="0 0 24 24"
-                  stroke="currentColor"
-                >
-                  <path
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    strokeWidth={2}
-                    d="M9 5l7 7-7 7"
-                  />
-                </svg>
-              </Link>
-            ))}
-          </div>
+          <EmptyChart loading={isLoading} />
         )}
+      </div>
+
+      {/* Top equipment + spend by school */}
+      <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
+        <div className="rounded-2xl border border-gray-200 bg-white p-6 dark:border-gray-800 dark:bg-white/[0.03]">
+          <h3 className="mb-4 text-lg font-semibold text-gray-800 dark:text-white/90">Top equipment by revenue</h3>
+          {summary && summary.topEquipment.length > 0 ? (
+            <ReactApexChart options={topEquipmentChart.options} series={topEquipmentChart.series} type="bar" height={280} />
+          ) : (
+            <EmptyChart loading={isLoading} />
+          )}
+        </div>
+        <div className="rounded-2xl border border-gray-200 bg-white p-6 dark:border-gray-800 dark:bg-white/[0.03]">
+          <h3 className="mb-4 text-lg font-semibold text-gray-800 dark:text-white/90">Spend by school</h3>
+          {summary && summary.spendBySchool.length > 0 ? (
+            <ReactApexChart options={schoolChart.options} series={schoolChart.series} type="donut" height={280} />
+          ) : (
+            <EmptyChart loading={isLoading} />
+          )}
+        </div>
       </div>
     </>
   );
 }
 
+function StatCard({ label, value, loading }: { label: string; value: string; loading: boolean }) {
+  return (
+    <div className="rounded-2xl border border-gray-200 bg-white p-6 dark:border-gray-800 dark:bg-white/[0.03]">
+      <p className="text-sm font-medium text-gray-500 dark:text-gray-400">{label}</p>
+      <h3 className="mt-2 text-2xl font-semibold text-gray-800 dark:text-white/90">{loading ? "…" : value}</h3>
+    </div>
+  );
+}
+
+function EmptyChart({ loading }: { loading: boolean }) {
+  return (
+    <div className="flex h-[280px] items-center justify-center text-sm text-gray-400">
+      {loading ? "Loading…" : "No data to display yet."}
+    </div>
+  );
+}

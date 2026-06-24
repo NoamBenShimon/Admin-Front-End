@@ -258,6 +258,7 @@ const AppSidebar: React.FC = () => {
 
     // If no submenu item matches, close the open submenu
     if (!submenuMatched) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- syncing open submenu to the active route
       setOpenSubmenu(null);
     }
   }, [pathname,isActive]);

@@ -1,49 +1,27 @@
 /**
- * @fileoverview Authentication Login API Route
+ * @fileoverview Login API route — POST /api/auth/login
  *
- * POST /api/auth/login
- * Proxies login requests to the backend with enhanced security.
+ * Proxies to the backend and forwards the backend's `sessionid` cookie to the
+ * browser so subsequent requests are authenticated.
  */
 
 import { NextRequest, NextResponse } from 'next/server';
-import { backendLogin } from '@/services/backendApi';
+import { proxyToBackend } from '@/services/backendApi';
 
 export async function POST(request: NextRequest) {
-  try {
-    const body = await request.json();
-    const { username, password } = body;
+  const body = await request.json().catch(() => null);
+  const username = body?.username;
+  const password = body?.password;
 
-    // Validate input
-    if (!username || !password) {
-      return NextResponse.json(
-        { error: 'Username and password are required' },
-        { status: 400 }
-      );
-    }
-
-    // Call backend login
-    const response = await backendLogin(username, password);
-
-    // Create response with session cookie if backend provides one
-    const nextResponse = NextResponse.json({
-      success: true,
-      data: response,
-    });
-
-    // TODO: If backend returns a session cookie, forward it
-    // Note: This depends on how backend handles sessions
-
-    return nextResponse;
-  } catch (error) {
-    console.error('Login API error:', error);
-
-    const errorMessage = error instanceof Error ? error.message : 'Login failed';
-    const statusCode = errorMessage.includes('401') || errorMessage.includes('Invalid') ? 401 : 500;
-
+  if (!username || !password) {
     return NextResponse.json(
-      { error: errorMessage },
-      { status: statusCode }
+      { error: 'Username and password are required' },
+      { status: 400 },
     );
   }
-}
 
+  return proxyToBackend(request, '/api/login', {
+    method: 'POST',
+    json: { username, password },
+  });
+}

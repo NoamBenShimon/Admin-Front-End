@@ -1,111 +1,55 @@
 /**
- * @fileoverview Client-Side API Service
+ * @fileoverview Client-side API service
  *
- * This module provides client-side API communication functions for the Admin Front-End.
+ * The single entry point every client component uses to talk to the system.
+ * Each function is wired through {@link withFallback}, which picks between the
+ * real backend (proxied by the Next.js `/api/*` routes) and the in-memory
+ * {@link mockStore}:
  *
- * SECURITY APPROACH:
- * - All requests go through Next.js API routes (/api/*) instead of directly to the backend
- * - This provides an additional security layer and allows for:
- *   - Server-side session validation
- *   - Secret management (backend URL hidden from client)
- *   - Request sanitization and rate limiting
- *   - CSRF protection
+ * - `NEXT_PUBLIC_USE_MOCKS` unset or `"true"` (default): everything is served by
+ *   the mock store, so the admin panel is fully functional with no backend.
+ * - `NEXT_PUBLIC_USE_MOCKS="false"`: real calls are made; if the backend is
+ *   unreachable or hasn't implemented an endpoint yet (network error / 5xx /
+ *   501), that one call transparently falls back to the mock. Real 4xx errors
+ *   (validation, auth, not-found) surface to the caller.
+ *
+ * Flip the whole app from mock to live by changing that one variable.
  *
  * @module services/api
  */
 
 import type {
-  LoginCredentials,
-  LoginResponse,
+  AnalyticsSummary,
   AuthStatusResponse,
+  BalanceResponse,
   Equipment,
   EquipmentPayload,
-  Order,
-  OrderStatusUpdate,
-  DashboardStats,
-  School,
   Grade,
-  ClassEquipmentList,
-  EquipmentItem,
-  EquipmentListUpdatePayload,
-  ApiResponse,
-  ApiError,
+  GradePayload,
+  GradeRequirements,
+  ImportResult,
+  LoginCredentials,
+  LoginResponse,
+  Order,
+  OrderFilters,
+  ParentUser,
+  ParentUserPayload,
+  ParentUserUpdatePayload,
+  PaymentsResponse,
+  RefundResult,
+  RequirementsUpdatePayload,
+  School,
+  SchoolPayload,
 } from '@/types/api';
+import { mockStore } from './mock/store';
 
-// =============================================================================
-// Mock Data (used when backend is unavailable)
-// =============================================================================
-
-const MOCK_SCHOOLS: School[] = [
-  { id: '1', name: 'Lincoln Elementary School', address: '123 Main St, Springfield', contactEmail: 'admin@lincoln.edu', contactPhone: '555-0101' },
-  { id: '2', name: 'Washington Middle School', address: '456 Oak Ave, Springfield', contactEmail: 'admin@washington.edu', contactPhone: '555-0102' },
-  { id: '3', name: 'Jefferson High School', address: '789 Pine Rd, Springfield', contactEmail: 'admin@jefferson.edu', contactPhone: '555-0103' },
-];
-
-const MOCK_GRADES: Record<string, Grade[]> = {
-  '1': [
-    { id: '1a', schoolId: '1', name: 'Grade 1-A', level: 1, studentCount: 25 },
-    { id: '1b', schoolId: '1', name: 'Grade 1-B', level: 1, studentCount: 24 },
-    { id: '2a', schoolId: '1', name: 'Grade 2-A', level: 2, studentCount: 26 },
-  ],
-  '2': [
-    { id: '6a', schoolId: '2', name: 'Grade 6-A', level: 6, studentCount: 28 },
-    { id: '6b', schoolId: '2', name: 'Grade 6-B', level: 6, studentCount: 27 },
-    { id: '7a', schoolId: '2', name: 'Grade 7-A', level: 7, studentCount: 30 },
-  ],
-  '3': [
-    { id: '9a', schoolId: '3', name: 'Grade 9-A', level: 9, studentCount: 32 },
-    { id: '10a', schoolId: '3', name: 'Grade 10-A', level: 10, studentCount: 31 },
-    { id: '11a', schoolId: '3', name: 'Grade 11-A', level: 11, studentCount: 29 },
-  ],
-};
-
-const MOCK_EQUIPMENT_LISTS: Record<string, ClassEquipmentList> = {
-  '1a': {
-    id: 'eq-1a',
-    classId: '1a',
-    schoolId: '1',
-    items: [
-      { id: 'item-1', name: 'Pencils', count: 50, category: 'Writing' },
-      { id: 'item-2', name: 'Notebooks', count: 30, category: 'Paper' },
-      { id: 'item-3', name: 'Crayons (Box)', count: 25, category: 'Art' },
-      { id: 'item-4', name: 'Scissors', count: 25, category: 'Tools' },
-    ],
-    lastUpdated: '2026-01-15T10:30:00Z',
-  },
-  '1b': {
-    id: 'eq-1b',
-    classId: '1b',
-    schoolId: '1',
-    items: [
-      { id: 'item-5', name: 'Pencils', count: 48, category: 'Writing' },
-      { id: 'item-6', name: 'Notebooks', count: 28, category: 'Paper' },
-      { id: 'item-7', name: 'Glue Sticks', count: 24, category: 'Art' },
-    ],
-    lastUpdated: '2026-01-14T09:15:00Z',
-  },
-  '6a': {
-    id: 'eq-6a',
-    classId: '6a',
-    schoolId: '2',
-    items: [
-      { id: 'item-8', name: 'Scientific Calculator', count: 30, category: 'Math' },
-      { id: 'item-9', name: 'Geometry Set', count: 28, category: 'Math' },
-      { id: 'item-10', name: 'Lab Notebooks', count: 30, category: 'Science' },
-    ],
-    lastUpdated: '2026-01-13T14:00:00Z',
-  },
-};
-
-/**
- * Base URL for API calls - points to Next.js API routes
- */
+/** Base URL for the Next.js API routes (same-origin by default). */
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || '/api';
 
+/** When true (the default), all data comes from the in-memory mock store. */
+const USE_MOCKS = process.env.NEXT_PUBLIC_USE_MOCKS !== 'false';
 
-/**
- * Custom error class for API errors
- */
+/** Custom error carrying the HTTP status of a failed API call. */
 export class ApiRequestError extends Error {
   statusCode?: number;
 
@@ -116,439 +60,360 @@ export class ApiRequestError extends Error {
   }
 }
 
-/**
- * Generic fetch wrapper with error handling
- */
-async function apiFetch<T>(
-  endpoint: string,
-  options: RequestInit = {}
-): Promise<T> {
+/** Generic fetch wrapper against the Next.js API routes. */
+async function apiFetch<T>(endpoint: string, options: RequestInit = {}): Promise<T> {
   const url = `${API_BASE}${endpoint}`;
-
-  const defaultHeaders: HeadersInit = {
-    'Content-Type': 'application/json',
-  };
 
   const config: RequestInit = {
     ...options,
     headers: {
-      ...defaultHeaders,
+      'Content-Type': 'application/json',
       ...options.headers,
     },
-    credentials: 'include', // Always include cookies for session management
+    credentials: 'include',
   };
 
+  let response: Response;
   try {
-    const response = await fetch(url, config);
-
-    // Try to parse response body
-    let data: any;
-    const contentType = response.headers.get('content-type');
-    if (contentType && contentType.includes('application/json')) {
-      data = await response.json();
-    } else {
-      data = await response.text();
-    }
-
-    // Handle non-OK responses
-    if (!response.ok) {
-      const errorMessage =
-        (typeof data === 'object' && data?.error) ||
-        (typeof data === 'object' && data?.message) ||
-        (typeof data === 'string' ? data : undefined) ||
-        `Request failed with status ${response.status}`;
-
-      throw new ApiRequestError(errorMessage, response.status);
-    }
-
-    // Return data directly if it's a successful response
-    return (typeof data === 'object' && data?.data !== undefined) ? data.data : data;
+    response = await fetch(url, config);
   } catch (error) {
-    if (error instanceof ApiRequestError) {
-      throw error;
-    }
-
-    // Network or other errors
-    console.error('API request failed:', error);
+    // Network-level failure (backend/Next route unreachable).
     throw new ApiRequestError(
-      error instanceof Error ? error.message : 'Network error occurred'
+      error instanceof Error ? error.message : 'Network error occurred',
     );
   }
+
+  let data: unknown;
+  const contentType = response.headers.get('content-type');
+  if (contentType && contentType.includes('application/json')) {
+    data = await response.json();
+  } else {
+    data = await response.text();
+  }
+
+  if (!response.ok) {
+    const record = typeof data === 'object' && data !== null ? (data as Record<string, unknown>) : null;
+    const message =
+      (record && typeof record.error === 'string' && record.error) ||
+      (record && typeof record.message === 'string' && record.message) ||
+      (typeof data === 'string' && data) ||
+      `Request failed with status ${response.status}`;
+    throw new ApiRequestError(message, response.status);
+  }
+
+  // Unwrap the `{ success, data }` envelope used by the API routes.
+  if (typeof data === 'object' && data !== null && 'data' in data) {
+    return (data as { data: T }).data;
+  }
+  return data as T;
+}
+
+/** Should a failed real call fall back to the mock store? */
+function shouldFallback(error: unknown): boolean {
+  if (!(error instanceof ApiRequestError)) return true; // network / parse error
+  const s = error.statusCode;
+  return s === undefined || s === 501 || s === 502 || s === 503 || s === 504;
+}
+
+/**
+ * Run `real` against the backend, or `mock` when mocks are forced or the
+ * backend can't serve the call. See the module docstring for the policy.
+ */
+async function withFallback<T>(real: () => Promise<T>, mock: () => Promise<T> | T): Promise<T> {
+  if (USE_MOCKS) return mock();
+  try {
+    return await real();
+  } catch (error) {
+    if (shouldFallback(error)) {
+      console.warn('[api] backend unavailable — using mock data:', error);
+      return mock();
+    }
+    throw error;
+  }
+}
+
+function toQuery(params: Record<string, string | undefined>): string {
+  const search = new URLSearchParams();
+  for (const [key, value] of Object.entries(params)) {
+    if (value) search.set(key, value);
+  }
+  const qs = search.toString();
+  return qs ? `?${qs}` : '';
 }
 
 // =============================================================================
-// Authentication API
+// Authentication
 // =============================================================================
 
-/**
- * Authenticate admin user
- *
- * @param credentials - Admin login credentials
- * @returns Promise resolving to login response with user data
- * @throws {ApiRequestError} If authentication fails
- */
 export async function login(credentials: LoginCredentials): Promise<LoginResponse> {
-  return apiFetch<LoginResponse>('/auth/login', {
-    method: 'POST',
-    body: JSON.stringify(credentials),
-  });
+  return withFallback(
+    () => apiFetch<LoginResponse>('/auth/login', { method: 'POST', body: JSON.stringify(credentials) }),
+    () => mockStore.login(credentials.username, credentials.password),
+  );
 }
 
-/**
- * Log out current admin user
- *
- * @returns Promise resolving when logout is complete
- * @throws {ApiRequestError} If logout fails
- */
 export async function logout(): Promise<void> {
-  return apiFetch<void>('/auth/logout', {
-    method: 'POST',
-  });
+  return withFallback(
+    () => apiFetch<void>('/auth/logout', { method: 'POST' }),
+    () => mockStore.logout(),
+  );
 }
 
-/**
- * Check current authentication status
- *
- * @returns Promise resolving to authentication status
- * @throws {ApiRequestError} If not authenticated or check fails
- */
 export async function checkAuth(): Promise<AuthStatusResponse> {
-  return apiFetch<AuthStatusResponse>('/auth/status', {
-    method: 'GET',
-  });
+  return withFallback(
+    () => apiFetch<AuthStatusResponse>('/auth/status', { method: 'GET' }),
+    async () => {
+      const session = await mockStore.authStatus();
+      return session
+        ? { authenticated: true, userid: session.userid, username: session.username, role: session.role }
+        : { authenticated: false };
+    },
+  );
 }
 
 // =============================================================================
-// Equipment/Inventory API
+// Schools
 // =============================================================================
 
-/**
- * Get all equipment items
- *
- * @returns Promise resolving to array of equipment
- */
-export async function getEquipment(): Promise<Equipment[]> {
-  return apiFetch<Equipment[]>('/equipment', {
-    method: 'GET',
-  });
-}
-
-/**
- * Get single equipment item by ID
- *
- * @param id - Equipment ID
- * @returns Promise resolving to equipment item
- */
-export async function getEquipmentById(id: string): Promise<Equipment> {
-  return apiFetch<Equipment>(`/equipment/${id}`, {
-    method: 'GET',
-  });
-}
-
-/**
- * Create new equipment item
- *
- * @param payload - Equipment data
- * @returns Promise resolving to created equipment
- */
-export async function createEquipment(payload: EquipmentPayload): Promise<Equipment> {
-  return apiFetch<Equipment>('/equipment', {
-    method: 'POST',
-    body: JSON.stringify(payload),
-  });
-}
-
-/**
- * Update existing equipment item
- *
- * @param id - Equipment ID
- * @param payload - Updated equipment data
- * @returns Promise resolving to updated equipment
- */
-export async function updateEquipment(id: string, payload: Partial<EquipmentPayload>): Promise<Equipment> {
-  return apiFetch<Equipment>(`/equipment/${id}`, {
-    method: 'PUT',
-    body: JSON.stringify(payload),
-  });
-}
-
-/**
- * Delete equipment item
- *
- * @param id - Equipment ID
- * @returns Promise resolving when deletion is complete
- */
-export async function deleteEquipment(id: string): Promise<void> {
-  return apiFetch<void>(`/equipment/${id}`, {
-    method: 'DELETE',
-  });
-}
-
-// =============================================================================
-// Orders API
-// =============================================================================
-
-/**
- * Get all orders
- *
- * @param filters - Optional filters (status, date range, etc.)
- * @returns Promise resolving to array of orders
- */
-export async function getOrders(filters?: Record<string, string>): Promise<Order[]> {
-  const query = filters ? `?${new URLSearchParams(filters).toString()}` : '';
-  return apiFetch<Order[]>(`/orders${query}`, {
-    method: 'GET',
-  });
-}
-
-/**
- * Get single order by ID
- *
- * @param id - Order ID
- * @returns Promise resolving to order
- */
-export async function getOrderById(id: string): Promise<Order> {
-  return apiFetch<Order>(`/orders/${id}`, {
-    method: 'GET',
-  });
-}
-
-/**
- * Update order status
- *
- * @param id - Order ID
- * @param update - Status update data
- * @returns Promise resolving to updated order
- */
-export async function updateOrderStatus(id: string, update: OrderStatusUpdate): Promise<Order> {
-  return apiFetch<Order>(`/orders/${id}/status`, {
-    method: 'PUT',
-    body: JSON.stringify(update),
-  });
-}
-
-// =============================================================================
-// Schools & Grades API (with mock data fallback)
-// =============================================================================
-
-/**
- * Get all schools
- * Falls back to mock data if backend is unavailable
- *
- * @returns Promise resolving to array of schools
- */
 export async function getSchools(): Promise<School[]> {
-  try {
-    return await apiFetch<School[]>('/schools', {
-      method: 'GET',
-    });
-  } catch (error) {
-    console.warn('Failed to fetch schools from backend, using mock data:', error);
-    return MOCK_SCHOOLS;
-  }
+  return withFallback(() => apiFetch<School[]>('/schools'), () => mockStore.listSchools());
 }
 
-/**
- * Get a single school by ID
- * Falls back to mock data if backend is unavailable
- *
- * @param schoolId - School ID
- * @returns Promise resolving to school or null
- */
-export async function getSchoolById(schoolId: string): Promise<School | null> {
-  try {
-    return await apiFetch<School>(`/schools/${schoolId}`, {
-      method: 'GET',
-    });
-  } catch (error) {
-    console.warn('Failed to fetch school from backend, using mock data:', error);
-    return MOCK_SCHOOLS.find(s => s.id === schoolId) || null;
-  }
+export async function getSchoolById(id: string): Promise<School | null> {
+  return withFallback(() => apiFetch<School>(`/schools/${id}`), () => mockStore.getSchool(id));
 }
 
-/**
- * Get grades/classes for a specific school
- * Falls back to mock data if backend is unavailable
- *
- * @param schoolId - School ID
- * @returns Promise resolving to array of grades
- */
+export async function createSchool(payload: SchoolPayload): Promise<School> {
+  return withFallback(
+    () => apiFetch<School>('/schools', { method: 'POST', body: JSON.stringify(payload) }),
+    () => mockStore.createSchool(payload.name, payload.nameHe),
+  );
+}
+
+export async function updateSchool(id: string, payload: SchoolPayload): Promise<School> {
+  return withFallback(
+    () => apiFetch<School>(`/schools/${id}`, { method: 'PUT', body: JSON.stringify(payload) }),
+    () => mockStore.updateSchool(id, payload.name, payload.nameHe),
+  );
+}
+
+export async function deleteSchool(id: string): Promise<void> {
+  return withFallback(
+    () => apiFetch<void>(`/schools/${id}`, { method: 'DELETE' }),
+    () => mockStore.deleteSchool(id),
+  );
+}
+
+// =============================================================================
+// Grades
+// =============================================================================
+
 export async function getGradesBySchool(schoolId: string): Promise<Grade[]> {
-  try {
-    return await apiFetch<Grade[]>(`/schools/${schoolId}/grades`, {
-      method: 'GET',
-    });
-  } catch (error) {
-    console.warn('Failed to fetch grades from backend, using mock data:', error);
-    return MOCK_GRADES[schoolId] || [];
-  }
+  return withFallback(
+    () => apiFetch<Grade[]>(`/grades${toQuery({ school_id: schoolId })}`),
+    () => mockStore.listGradesBySchool(schoolId),
+  );
 }
 
-/**
- * Get a single class by ID
- * Falls back to mock data if backend is unavailable
- *
- * @param schoolId - School ID
- * @param classId - Class ID
- * @returns Promise resolving to grade or null
- */
-export async function getClassById(schoolId: string, classId: string): Promise<Grade | null> {
-  try {
-    return await apiFetch<Grade>(`/schools/${schoolId}/grades/${classId}`, {
-      method: 'GET',
-    });
-  } catch (error) {
-    console.warn('Failed to fetch class from backend, using mock data:', error);
-    const grades = MOCK_GRADES[schoolId] || [];
-    return grades.find(g => g.id === classId) || null;
-  }
+export async function getGradeById(id: string): Promise<Grade | null> {
+  return withFallback(() => apiFetch<Grade>(`/grades/${id}`), () => mockStore.getGrade(id));
+}
+
+export async function createGrade(payload: GradePayload): Promise<Grade> {
+  return withFallback(
+    () => apiFetch<Grade>('/grades', { method: 'POST', body: JSON.stringify(payload) }),
+    () => mockStore.createGrade(payload.schoolId, payload.name, payload.nameHe),
+  );
+}
+
+export async function updateGrade(id: string, name: string, nameHe?: string): Promise<Grade> {
+  const body = nameHe === undefined ? { name } : { name, nameHe };
+  return withFallback(
+    () => apiFetch<Grade>(`/grades/${id}`, { method: 'PUT', body: JSON.stringify(body) }),
+    () => mockStore.updateGrade(id, name, nameHe),
+  );
+}
+
+export async function deleteGrade(id: string): Promise<void> {
+  return withFallback(
+    () => apiFetch<void>(`/grades/${id}`, { method: 'DELETE' }),
+    () => mockStore.deleteGrade(id),
+  );
 }
 
 // =============================================================================
-// Equipment List API (with mock data fallback)
+// Equipment catalog
 // =============================================================================
 
-/**
- * Get equipment list for a class
- * Falls back to mock data if backend is unavailable
- *
- * @param classId - Class ID
- * @returns Promise resolving to equipment list
- */
-export async function getEquipmentList(classId: string): Promise<ClassEquipmentList> {
-  try {
-    return await apiFetch<ClassEquipmentList>(`/classes/${classId}/equipment`, {
-      method: 'GET',
-    });
-  } catch (error) {
-    console.warn('Failed to fetch equipment list from backend, using mock data:', error);
-    return MOCK_EQUIPMENT_LISTS[classId] || {
-      id: `eq-${classId}`,
-      classId,
-      schoolId: '',
-      items: [],
-      lastUpdated: new Date().toISOString(),
-    };
-  }
+export async function getEquipment(): Promise<Equipment[]> {
+  return withFallback(() => apiFetch<Equipment[]>('/equipment'), () => mockStore.listEquipment());
 }
 
-/**
- * Update equipment list for a class
- * Falls back to updating mock data if backend is unavailable
- *
- * @param classId - Class ID
- * @param items - Updated equipment items
- * @returns Promise resolving to updated equipment list
- */
-export async function updateEquipmentList(
-  classId: string,
-  items: EquipmentItem[]
-): Promise<ClassEquipmentList> {
-  try {
-    return await apiFetch<ClassEquipmentList>(`/classes/${classId}/equipment`, {
+export async function getEquipmentById(id: string): Promise<Equipment | null> {
+  return withFallback(() => apiFetch<Equipment>(`/equipment/${id}`), () => mockStore.getEquipmentItem(id));
+}
+
+export async function createEquipment(payload: EquipmentPayload): Promise<Equipment> {
+  return withFallback(
+    () => apiFetch<Equipment>('/equipment', { method: 'POST', body: JSON.stringify(payload) }),
+    () => mockStore.createEquipment(payload.name, payload.price, payload.nameHe),
+  );
+}
+
+export async function updateEquipment(id: string, payload: Partial<EquipmentPayload>): Promise<Equipment> {
+  return withFallback(
+    () => apiFetch<Equipment>(`/equipment/${id}`, { method: 'PUT', body: JSON.stringify(payload) }),
+    () => mockStore.updateEquipment(id, payload),
+  );
+}
+
+export async function deleteEquipment(id: string): Promise<void> {
+  return withFallback(
+    () => apiFetch<void>(`/equipment/${id}`, { method: 'DELETE' }),
+    () => mockStore.deleteEquipment(id),
+  );
+}
+
+// =============================================================================
+// Grade requirements (a grade's equipment list)
+// =============================================================================
+
+export async function getGradeRequirements(gradeId: string): Promise<GradeRequirements> {
+  return withFallback(
+    () => apiFetch<GradeRequirements>(`/grades/${gradeId}/requirements`),
+    () => mockStore.getGradeRequirements(gradeId),
+  );
+}
+
+export async function updateGradeRequirements(
+  gradeId: string,
+  payload: RequirementsUpdatePayload,
+): Promise<GradeRequirements> {
+  return withFallback(
+    () => apiFetch<GradeRequirements>(`/grades/${gradeId}/requirements`, {
       method: 'PUT',
-      body: JSON.stringify({ items }),
+      body: JSON.stringify(payload),
+    }),
+    () => mockStore.setGradeRequirements(gradeId, payload.items),
+  );
+}
+
+// =============================================================================
+// Parent users
+// =============================================================================
+
+export async function getParents(): Promise<ParentUser[]> {
+  return withFallback(() => apiFetch<ParentUser[]>('/users'), () => mockStore.listParents());
+}
+
+export async function createParent(payload: ParentUserPayload): Promise<ParentUser> {
+  return withFallback(
+    () => apiFetch<ParentUser>('/users', { method: 'POST', body: JSON.stringify(payload) }),
+    () => mockStore.createParent(payload.username, payload.password),
+  );
+}
+
+export async function updateParent(id: string, payload: ParentUserUpdatePayload): Promise<ParentUser> {
+  return withFallback(
+    () => apiFetch<ParentUser>(`/users/${id}`, { method: 'PUT', body: JSON.stringify(payload) }),
+    () => mockStore.updateParent(id, payload),
+  );
+}
+
+export async function deleteParent(id: string): Promise<void> {
+  return withFallback(
+    () => apiFetch<void>(`/users/${id}`, { method: 'DELETE' }),
+    () => mockStore.deleteParent(id),
+  );
+}
+
+// =============================================================================
+// Orders
+// =============================================================================
+
+export async function getOrders(filters: OrderFilters = {}): Promise<Order[]> {
+  const query = toQuery({
+    school_id: filters.schoolId,
+    grade_id: filters.gradeId,
+    user_id: filters.userId,
+    from: filters.from,
+    to: filters.to,
+  });
+  return withFallback(() => apiFetch<Order[]>(`/orders${query}`), () => mockStore.listOrders(filters));
+}
+
+export async function getOrderById(id: string): Promise<Order | null> {
+  return withFallback(() => apiFetch<Order>(`/orders/${id}`), () => mockStore.getOrder(id));
+}
+
+// =============================================================================
+// Analytics
+// =============================================================================
+
+export async function getAnalyticsSummary(): Promise<AnalyticsSummary> {
+  return withFallback(() => apiFetch<AnalyticsSummary>('/analytics/summary'), () => mockStore.analyticsSummary());
+}
+
+// =============================================================================
+// Payments (Stripe)
+// =============================================================================
+//
+// Money data never silently falls back to mock in live mode — a backend/Stripe
+// error surfaces to the caller rather than showing fake figures. Mock data is
+// used only when the whole app is in mock mode.
+
+export async function getPayments(): Promise<PaymentsResponse> {
+  if (USE_MOCKS) return mockStore.listPayments();
+  return apiFetch<PaymentsResponse>('/payments');
+}
+
+export async function getStripeBalance(): Promise<BalanceResponse> {
+  if (USE_MOCKS) return mockStore.stripeBalance();
+  return apiFetch<BalanceResponse>('/payments/balance');
+}
+
+export async function refundPayment(id: string): Promise<RefundResult> {
+  if (USE_MOCKS) return mockStore.refundPayment(id);
+  return apiFetch<RefundResult>(`/payments/${id}/refund`, { method: 'POST' });
+}
+
+// =============================================================================
+// CSV import
+// =============================================================================
+
+export async function importCsv(file: File): Promise<ImportResult> {
+  if (USE_MOCKS) {
+    return mockStore.importCsv(await file.text());
+  }
+  const form = new FormData();
+  form.append('file', file);
+  try {
+    const response = await fetch(`${API_BASE}/import`, {
+      method: 'POST',
+      body: form,
+      credentials: 'include',
     });
+    const data = await response.json().catch(() => null);
+    if (!response.ok) {
+      if (response.status >= 500 || response.status === 501) {
+        return mockStore.importCsv(await file.text());
+      }
+      const message =
+        (data && typeof data.error === 'string' && data.error) || `Import failed with status ${response.status}`;
+      throw new ApiRequestError(message, response.status);
+    }
+    return (data && 'data' in data ? data.data : data) as ImportResult;
   } catch (error) {
-    console.warn('Failed to update equipment list on backend, updating mock data:', error);
-    // Update mock data in memory
-    const existing = MOCK_EQUIPMENT_LISTS[classId];
-    const updated: ClassEquipmentList = {
-      id: existing?.id || `eq-${classId}`,
-      classId,
-      schoolId: existing?.schoolId || '',
-      items,
-      lastUpdated: new Date().toISOString(),
-    };
-    MOCK_EQUIPMENT_LISTS[classId] = updated;
-    return updated;
+    if (error instanceof ApiRequestError) throw error;
+    return mockStore.importCsv(await file.text());
   }
 }
 
-/**
- * Add a single equipment item to a class
- *
- * @param classId - Class ID
- * @param item - Equipment item to add (without ID)
- * @returns Promise resolving to updated equipment list
- */
-export async function addEquipmentItem(
-  classId: string,
-  item: Omit<EquipmentItem, 'id'>
-): Promise<ClassEquipmentList> {
-  const equipmentList = await getEquipmentList(classId);
-  const newItem: EquipmentItem = {
-    ...item,
-    id: `item-${Date.now()}`,
-  };
-  return updateEquipmentList(classId, [...equipmentList.items, newItem]);
-}
-
-/**
- * Update a single equipment item in a class
- *
- * @param classId - Class ID
- * @param itemId - Equipment item ID
- * @param updates - Partial updates to the item
- * @returns Promise resolving to updated equipment list
- */
-export async function updateEquipmentItem(
-  classId: string,
-  itemId: string,
-  updates: Partial<Omit<EquipmentItem, 'id'>>
-): Promise<ClassEquipmentList> {
-  const equipmentList = await getEquipmentList(classId);
-  const updatedItems = equipmentList.items.map(item =>
-    item.id === itemId ? { ...item, ...updates } : item
-  );
-  return updateEquipmentList(classId, updatedItems);
-}
-
-/**
- * Delete a single equipment item from a class
- *
- * @param classId - Class ID
- * @param itemId - Equipment item ID
- * @returns Promise resolving to updated equipment list
- */
-export async function deleteEquipmentItem(
-  classId: string,
-  itemId: string
-): Promise<ClassEquipmentList> {
-  const equipmentList = await getEquipmentList(classId);
-  const filteredItems = equipmentList.items.filter(item => item.id !== itemId);
-  return updateEquipmentList(classId, filteredItems);
-}
-
 // =============================================================================
-// Dashboard/Analytics API
+// Utilities
 // =============================================================================
 
-/**
- * Get dashboard statistics
- *
- * @returns Promise resolving to dashboard stats
- */
-export async function getDashboardStats(): Promise<DashboardStats> {
-  return apiFetch<DashboardStats>('/dashboard/stats', {
-    method: 'GET',
-  });
-}
-
-// =============================================================================
-// Utility Functions
-// =============================================================================
-
-/**
- * Check if an error is an authentication error
- *
- * @param error - Error to check
- * @returns True if error is authentication-related
- */
+/** True if the error is an authentication/authorization failure. */
 export function isAuthError(error: unknown): boolean {
-  return (
-    error instanceof ApiRequestError &&
-    (error.statusCode === 401 || error.statusCode === 403)
-  );
+  return error instanceof ApiRequestError && (error.statusCode === 401 || error.statusCode === 403);
 }
-

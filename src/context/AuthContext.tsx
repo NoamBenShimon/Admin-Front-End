@@ -101,27 +101,17 @@ export function AuthProvider({ children }: AuthProviderProps) {
    * @throws {Error} If login fails
    */
   const login = async (username: string, password: string) => {
-    try {
-      const response = await api.login({ username, password });
+    // `api.login` talks to the backend, or to the mock store when mocks are
+    // enabled (it validates against the seeded admin account). Errors propagate
+    // to the sign-in form so invalid credentials are reported to the user.
+    const response = await api.login({ username, password });
 
-      setIsAuthenticated(true);
-      setUser({
-        userid: response.userid,
-        username: response.username,
-        role: response.role || 'admin',
-      });
-    } catch (error) {
-      // TODO: Remove mock login when backend is connected
-      // For now, accept any username/password when backend is unavailable
-      console.warn('Backend login failed, using mock login:', error);
-
-      setIsAuthenticated(true);
-      setUser({
-        userid: 'mock-user-id',
-        username: username,
-        role: 'admin',
-      });
-    }
+    setIsAuthenticated(true);
+    setUser({
+      userid: response.userid,
+      username: response.username,
+      role: response.role || 'admin',
+    });
   };
 
   /**

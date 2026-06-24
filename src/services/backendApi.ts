@@ -1,20 +1,21 @@
 /**
- * @fileoverview Backend API Client (Server-Side)
+ * @fileoverview Backend proxy (server-side)
  *
- * This module provides server-side functions for communicating with the backend API.
- * Used by Next.js API routes to proxy requests securely.
+ * Helpers used by the Next.js `/api/*` route handlers to forward requests to
+ * the Go backend. The backend URL stays server-side (never exposed to the
+ * browser) and the session cookie is forwarded in both directions, so the
+ * httpOnly `sessionid` cookie the backend issues on login reaches the browser.
  *
- * SECURITY FEATURES:
- * - Backend URL is kept server-side (not exposed to client)
- * - Session validation happens on server
- * - Credentials and tokens are managed server-side
+ * Admin endpoints are namespaced under the backend's `/api/admin/*`; until the
+ * backend implements them, calls fail and the client falls back to mock data
+ * (see `services/api.ts`). When the backend can't be reached at all this returns
+ * HTTP 503 so that fallback kicks in.
  *
  * @module services/backendApi
  */
 
-/**
- * Get backend API base URL from environment
- */
+import { NextRequest, NextResponse } from 'next/server';
+
 function getBackendUrl(): string {
   const url = process.env.API_URL;
   if (!url) {
@@ -23,177 +24,68 @@ function getBackendUrl(): string {
   return url;
 }
 
-/**
- * Generic backend API request function
- */
-export async function backendFetch<T>(
-    endpoint: string,
-    options: RequestInit = {}
-): Promise<T> {
-  const url = `${getBackendUrl()}${endpoint}`;
+export interface BackendResult {
+  status: number;
+  data: unknown;
+  setCookie: string | null;
+}
 
-  const config: RequestInit = {
-    ...options,
-    headers: {
-      'Content-Type': 'application/json',
-      ...options.headers,
-    },
-  };
+/** Low-level call to the backend. Never throws on connectivity — returns 503. */
+export async function backendRequest(
+  endpoint: string,
+  opts: { method?: string; cookie?: string | null; json?: unknown; body?: BodyInit } = {},
+): Promise<BackendResult> {
+  const { method = 'GET', cookie } = opts;
+  const headers: Record<string, string> = {};
+  if (cookie) headers['Cookie'] = cookie;
 
+  let body = opts.body;
+  if (opts.json !== undefined) {
+    headers['Content-Type'] = 'application/json';
+    body = JSON.stringify(opts.json);
+  }
+
+  let response: Response;
   try {
-    const response = await fetch(url, config);
-
-    let data: any;
-    const contentType = response.headers.get('content-type');
-    if (contentType && contentType.includes('application/json')) {
-      data = await response.json();
-    } else {
-      data = await response.text();
-    }
-
-    if (!response.ok) {
-      const errorMessage =
-          (typeof data === 'object' && data?.error) ||
-          (typeof data === 'object' && data?.message) ||
-          `Backend request failed with status ${response.status}`;
-
-      throw new Error(errorMessage);
-    }
-
-    return data;
-  } catch (error) {
-    console.error('Backend API error:', error);
-    throw error;
-  }
-}
-
-// =============================================================================
-// Authentication with Backend
-// =============================================================================
-
-/**
- * Authenticate with backend
- */
-export async function backendLogin(username: string, password: string) {
-  return backendFetch('/api/login', {
-    method: 'POST',
-    body: JSON.stringify({ username, password }),
-  });
-}
-
-/**
- * Logout from backend
- */
-export async function backendLogout(sessionCookie?: string) {
-  return backendFetch('/api/logout', {
-    method: 'POST',
-    headers: sessionCookie ? { Cookie: sessionCookie } : {},
-  });
-}
-
-/**
- * Check auth status with backend
- */
-export async function backendCheckAuth(sessionCookie?: string) {
-  return backendFetch('/api/auth/status', {
-    method: 'GET',
-    headers: sessionCookie ? { Cookie: sessionCookie } : {},
-  });
-}
-
-// =============================================================================
-// Equipment API
-// =============================================================================
-
-export async function backendGetEquipment(sessionCookie?: string) {
-  return backendFetch('/api/equipment', {
-    method: 'GET',
-    headers: sessionCookie ? { Cookie: sessionCookie } : {},
-  });
-}
-
-export async function backendCreateEquipment(data: any, sessionCookie?: string) {
-  return backendFetch('/api/equipment', {
-    method: 'POST',
-    body: JSON.stringify(data),
-    headers: sessionCookie ? { Cookie: sessionCookie } : {},
-  });
-}
-
-export async function backendUpdateEquipment(id: string, data: any, sessionCookie?: string) {
-  return backendFetch(`/api/equipment/${id}`, {
-    method: 'PUT',
-    body: JSON.stringify(data),
-    headers: sessionCookie ? { Cookie: sessionCookie } : {},
-  });
-}
-
-export async function backendDeleteEquipment(id: string, sessionCookie?: string) {
-  return backendFetch(`/api/equipment/${id}`, {
-    method: 'DELETE',
-    headers: sessionCookie ? { Cookie: sessionCookie } : {},
-  });
-}
-
-// =============================================================================
-// Orders API
-// =============================================================================
-
-export async function backendGetOrders(filters?: Record<string, string>, sessionCookie?: string) {
-  const query = filters ? `?${new URLSearchParams(filters).toString()}` : '';
-  return backendFetch(`/api/orders${query}`, {
-    method: 'GET',
-    headers: sessionCookie ? { Cookie: sessionCookie } : {},
-  });
-}
-
-export async function backendUpdateOrderStatus(id: string, data: any, sessionCookie?: string) {
-  return backendFetch(`/api/orders/${id}/status`, {
-    method: 'PUT',
-    body: JSON.stringify(data),
-    headers: sessionCookie ? { Cookie: sessionCookie } : {},
-  });
-}
-
-// =============================================================================
-// CSV Upload API
-// =============================================================================
-
-/**
- * Upload a CSV file to the backend
- * Note: This uses a different approach than backendFetch because we need to send FormData
- */
-export async function backendUploadCsv(file: File, sessionCookie?: string) {
-  const url = process.env.API_URL;
-  if (!url) {
-    throw new Error('API_URL environment variable is not set');
+    response = await fetch(`${getBackendUrl()}${endpoint}`, { method, headers, body });
+  } catch {
+    return { status: 503, data: { error: 'Backend unavailable' }, setCookie: null };
   }
 
-  const formData = new FormData();
-  formData.append('file', file);
-
-  const response = await fetch(`${url}/api/upload-csv`, {
-    method: 'POST',
-    headers: sessionCookie ? { Cookie: sessionCookie } : {},
-    body: formData,
-  });
-
-  let data: any;
   const contentType = response.headers.get('content-type');
-  if (contentType && contentType.includes('application/json')) {
-    data = await response.json();
-  } else {
-    data = await response.text();
-  }
+  const data =
+    contentType && contentType.includes('application/json')
+      ? await response.json()
+      : await response.text();
 
-  if (!response.ok) {
-    const errorMessage =
-        (typeof data === 'object' && data?.error) ||
-        (typeof data === 'object' && data?.message) ||
-        `CSV upload failed with status ${response.status}`;
+  return { status: response.status, data, setCookie: response.headers.get('set-cookie') };
+}
 
-    throw new Error(errorMessage);
-  }
+/**
+ * Proxy an incoming Next request to the backend and build a Next response,
+ * wrapping success bodies in the `{ success, data }` envelope the client
+ * expects and forwarding any `Set-Cookie` (e.g. the login session) to the browser.
+ */
+export async function proxyToBackend(
+  request: NextRequest,
+  endpoint: string,
+  opts: { method?: string; json?: unknown } = {},
+): Promise<NextResponse> {
+  const cookie = request.headers.get('cookie');
+  const result = await backendRequest(endpoint, {
+    method: opts.method ?? request.method,
+    cookie,
+    json: opts.json,
+  });
 
-  return data;
+  const ok = result.status >= 200 && result.status < 300;
+  const payload = ok
+    ? { success: true, data: result.data }
+    : typeof result.data === 'object' && result.data !== null
+      ? result.data
+      : { error: String(result.data) };
+
+  const response = NextResponse.json(payload, { status: result.status });
+  if (result.setCookie) response.headers.set('set-cookie', result.setCookie);
+  return response;
 }

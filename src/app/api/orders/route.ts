@@ -1,39 +1,14 @@
 /**
- * @fileoverview Orders API Route
+ * @fileoverview Orders API route
  *
- * GET /api/orders - Get all orders
+ * GET /api/orders?school_id=&grade_id=&user_id=&from=&to=
+ *   -> backend GET /api/admin/orders (same query)  (read-only history)
  */
 
-import { NextRequest, NextResponse } from 'next/server';
-import { backendGetOrders } from '@/services/backendApi';
+import { NextRequest } from 'next/server';
+import { proxyToBackend } from '@/services/backendApi';
 
 export async function GET(request: NextRequest) {
-  try {
-    const cookie = request.headers.get('cookie');
-
-    // Extract query parameters for filtering
-    const { searchParams } = new URL(request.url);
-    const filters: Record<string, string> = {};
-    searchParams.forEach((value, key) => {
-      filters[key] = value;
-    });
-
-    const orders = await backendGetOrders(
-      Object.keys(filters).length > 0 ? filters : undefined,
-      cookie || undefined
-    );
-
-    return NextResponse.json({
-      success: true,
-      data: orders,
-    });
-  } catch (error) {
-    console.error('Get orders error:', error);
-
-    return NextResponse.json(
-      { error: error instanceof Error ? error.message : 'Failed to fetch orders' },
-      { status: 500 }
-    );
-  }
+  const search = new URL(request.url).search; // includes leading '?' or ''
+  return proxyToBackend(request, `/api/admin/orders${search}`, { method: 'GET' });
 }
-

@@ -1,58 +1,28 @@
 /**
- * @fileoverview Equipment by ID API Route
+ * @fileoverview Equipment-by-id API route
  *
- * PUT /api/equipment/[id] - Update equipment
- * DELETE /api/equipment/[id] - Delete equipment
+ * GET    /api/equipment/[id] -> backend GET    /api/admin/equipment/[id]
+ * PUT    /api/equipment/[id] -> backend PUT    /api/admin/equipment/[id]
+ * DELETE /api/equipment/[id] -> backend DELETE /api/admin/equipment/[id]
  */
 
-import { NextRequest, NextResponse } from 'next/server';
-import { backendUpdateEquipment, backendDeleteEquipment } from '@/services/backendApi';
+import { NextRequest } from 'next/server';
+import { proxyToBackend } from '@/services/backendApi';
 
-export async function PUT(
-  request: NextRequest,
-  { params }: { params: { id: string } }
-) {
-  try {
-    const cookie = request.headers.get('cookie');
-    const body = await request.json();
-    const { id } = params;
+type Ctx = { params: Promise<{ id: string }> };
 
-    const equipment = await backendUpdateEquipment(id, body, cookie || undefined);
-
-    return NextResponse.json({
-      success: true,
-      data: equipment,
-    });
-  } catch (error) {
-    console.error('Update equipment error:', error);
-
-    return NextResponse.json(
-      { error: error instanceof Error ? error.message : 'Failed to update equipment' },
-      { status: 500 }
-    );
-  }
+export async function GET(request: NextRequest, ctx: Ctx) {
+  const { id } = await ctx.params;
+  return proxyToBackend(request, `/api/admin/equipment/${id}`, { method: 'GET' });
 }
 
-export async function DELETE(
-  request: NextRequest,
-  { params }: { params: { id: string } }
-) {
-  try {
-    const cookie = request.headers.get('cookie');
-    const { id } = params;
-
-    await backendDeleteEquipment(id, cookie || undefined);
-
-    return NextResponse.json({
-      success: true,
-    });
-  } catch (error) {
-    console.error('Delete equipment error:', error);
-
-    return NextResponse.json(
-      { error: error instanceof Error ? error.message : 'Failed to delete equipment' },
-      { status: 500 }
-    );
-  }
+export async function PUT(request: NextRequest, ctx: Ctx) {
+  const { id } = await ctx.params;
+  const json = await request.json().catch(() => ({}));
+  return proxyToBackend(request, `/api/admin/equipment/${id}`, { method: 'PUT', json });
 }
 
+export async function DELETE(request: NextRequest, ctx: Ctx) {
+  const { id } = await ctx.params;
+  return proxyToBackend(request, `/api/admin/equipment/${id}`, { method: 'DELETE' });
+}

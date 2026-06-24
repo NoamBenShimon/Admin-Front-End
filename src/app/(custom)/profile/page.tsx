@@ -5,6 +5,9 @@ import { useAuth } from "@/context/AuthContext";
 import Breadcrumb from "@/components/common/Breadcrumb";
 import Button from "@/components/ui/button/Button";
 
+// Inlined at build time; reflects whether the app is talking to the live backend.
+const USING_MOCKS = process.env.NEXT_PUBLIC_USE_MOCKS !== "false";
+
 export default function ProfilePage() {
   const { user, logout } = useAuth();
 
@@ -68,14 +71,6 @@ export default function ProfilePage() {
                 {user?.role || "—"}
               </span>
             </div>
-            {user?.email && (
-              <div className="flex justify-between py-3 border-b border-gray-100 dark:border-gray-800">
-                <span className="text-gray-500 dark:text-gray-400">Email</span>
-                <span className="font-medium text-gray-800 dark:text-white/90">
-                  {user.email}
-                </span>
-              </div>
-            )}
           </div>
 
           <div className="mt-6">
@@ -116,13 +111,15 @@ export default function ProfilePage() {
             </div>
             <div className="p-4 rounded-xl bg-gray-50 dark:bg-gray-800/50">
               <p className="text-sm text-gray-500 dark:text-gray-400">
-                Backend Connection
+                Data source
               </p>
-              <p className="mt-1 font-medium text-warning-500">
-                Using Mock Data
+              <p className={`mt-1 font-medium ${USING_MOCKS ? "text-warning-500" : "text-success-500"}`}>
+                {USING_MOCKS ? "Using mock data" : "Live backend"}
               </p>
               <p className="mt-1 text-xs text-gray-500">
-                Connect to backend for live data
+                {USING_MOCKS
+                  ? "Set NEXT_PUBLIC_USE_MOCKS=false to use the live backend."
+                  : "Connected to the backend API."}
               </p>
             </div>
           </div>

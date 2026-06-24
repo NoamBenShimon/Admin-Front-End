@@ -1,38 +1,12 @@
 /**
- * @fileoverview Authentication Logout API Route
+ * @fileoverview Logout API route — POST /api/auth/logout
  *
- * POST /api/auth/logout
- * Proxies logout requests to the backend.
+ * Proxies to the backend and forwards the cookie-clearing `Set-Cookie` header.
  */
 
-import { NextRequest, NextResponse } from 'next/server';
-import { backendLogout } from '@/services/backendApi';
+import { NextRequest } from 'next/server';
+import { proxyToBackend } from '@/services/backendApi';
 
 export async function POST(request: NextRequest) {
-  try {
-    // Get session cookie from request
-    const cookie = request.headers.get('cookie');
-
-    // Call backend logout
-    await backendLogout(cookie || undefined);
-
-    // Clear session cookie
-    const response = NextResponse.json({ success: true });
-
-    // Clear any session cookies
-    response.cookies.set('session', '', {
-      httpOnly: true,
-      secure: process.env.NODE_ENV === 'production',
-      sameSite: 'lax',
-      maxAge: 0,
-    });
-
-    return response;
-  } catch (error) {
-    console.error('Logout API error:', error);
-
-    // Return success anyway (local logout)
-    return NextResponse.json({ success: true });
-  }
+  return proxyToBackend(request, '/api/logout', { method: 'POST' });
 }
-
